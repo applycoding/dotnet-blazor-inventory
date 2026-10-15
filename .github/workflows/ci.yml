@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore NorthlineInventory.sln
+      - name: Build
+        run: dotnet build NorthlineInventory.sln -c Release --no-restore
+      - name: Test
+        run: dotnet test NorthlineInventory.sln -c Release --no-build --verbosity normal
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -f Dockerfile.api -t northline-api:ci .
+      - name: Build web image
+        run: docker build -f Dockerfile.web -t northline-web:ci .

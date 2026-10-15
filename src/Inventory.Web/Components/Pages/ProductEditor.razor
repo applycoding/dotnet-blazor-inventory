@@ -1,0 +1,203 @@
+@page "/products/new"
+@page "/products/{Id:guid}"
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>@(_creating ? "New product" : "Edit product") · Northline</PageTitle>
+
+<section class="page narrow">
+    <header class="page-head">
+        <div>
+            <p class="eyebrow">Catalog</p>
+            <h1>@(_creating ? "New product" : _draft.Sku)</h1>
+            <p class="lede">
+                @if (_creating)
+                {
+                    <text>An opening receipt is written when the starting quantity is above zero.</text>
+                }
+                else
+                {
+                    <text>On hand is @(_product?.QuantityOnHand ?? 0). Change it from Movements, not from this form.</text>
+                }
+            </p>
+        </div>
+        <a href="/products">Back to products</a>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="status">Loading product…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <p class="banner" role="alert">@_error</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(_saved))
+        {
+            <p class="banner good" role="status">@_saved</p>
+        }
+
+        <EditForm Model="_draft" OnValidSubmit="Save" class="stack-form">
+            <DataAnnotationsValidator />
+            <label>
+                SKU
+                @if (_creating)
+                {
+                    <InputText @bind-Value="_draft.Sku" />
+                }
+                else
+                {
+                    <InputText @bind-Value="_draft.Sku" disabled />
+                }
+                <ValidationMessage For="() => _draft.Sku" />
+                <FieldError Text="@ErrorFor("Sku")" />
+            </label>
+            <label>
+                Name
+                <InputText @bind-Value="_draft.Name" />
+                <ValidationMessage For="() => _draft.Name" />
+                <FieldError Text="@ErrorFor("Name")" />
+            </label>
+            <label>
+                Description
+                <InputTextArea @bind-Value="_draft.Description" />
+                <FieldError Text="@ErrorFor("Description")" />
+            </label>
+            <div class="split">
+                <label>
+                    Unit price
+                    <InputNumber @bind-Value="_draft.UnitPrice" />
+                    <FieldError Text="@ErrorFor("UnitPrice")" />
+                </label>
+                <label>
+                    Reorder level
+                    <InputNumber @bind-Value="_draft.ReorderLevel" />
+                    <FieldError Text="@ErrorFor("ReorderLevel")" />
+                </label>
+            </div>
+            @if (_creating)
+            {
+                <label>
+                    Starting quantity
+                    <InputNumber @bind-Value="_draft.InitialQuantity" />
+                    <FieldError Text="@ErrorFor("InitialQuantity")" />
+                </label>
+            }
+            else
+            {
+                <label class="check">
+                    <InputCheckbox @bind-Value="_draft.IsActive" />
+                    Active
+                </label>
+                <p><a href="@($"/movements?product={Id}")">Record a movement for this SKU</a></p>
+            }
+            <div class="form-actions">
+                <button class="button" type="submit" disabled="@_busy">@(_busy ? "Saving…" : "Save")</button>
+                <a href="/products">Cancel</a>
+            </div>
+        </EditForm>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private readonly ProductDraft _draft = new();
+    private ProductModel? _product;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _saved;
+    private IReadOnlyDictionary<string, string[]> _errors = new Dictionary<string, string[]>();
+
+    private Guid _seenId = Guid.NewGuid();
+    private bool _creating => Id == Guid.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_seenId == Id)
+        {
+            return;
+        }
+
+        _seenId = Id;
+        _saved = null;
+        _error = null;
+        _errors = new Dictionary<string, string[]>();
+        if (_creating)
+        {
+            ResetDraft();
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            _product = await Api.GetProductAsync(Id);
+            _draft.Sku = _product.Sku;
+            _draft.Name = _product.Name;
+            _draft.Description = _product.Description;
+            _draft.UnitPrice = _product.UnitPrice;
+            _draft.ReorderLevel = _product.ReorderLevel;
+            _draft.IsActive = _product.IsActive;
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        _busy = true;
+        _error = null;
+        _saved = null;
+        _errors = new Dictionary<string, string[]>();
+        try
+        {
+            if (_creating)
+            {
+                var created = await Api.CreateProductAsync(_draft);
+                Navigation.NavigateTo($"/products/{created.Id}");
+                return;
+            }
+
+            _product = await Api.UpdateProductAsync(Id, _draft);
+            _saved = "Saved.";
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+            _errors = exception.Errors;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string? ErrorFor(string name)
+    {
+        return _errors.TryGetValue(name, out var messages) ? messages.FirstOrDefault() : null;
+    }
+
+    private void ResetDraft()
+    {
+        _product = null;
+        _draft.Sku = string.Empty;
+        _draft.Name = string.Empty;
+        _draft.Description = null;
+        _draft.UnitPrice = 0;
+        _draft.InitialQuantity = 0;
+        _draft.ReorderLevel = 5;
+        _draft.IsActive = true;
+    }
+}

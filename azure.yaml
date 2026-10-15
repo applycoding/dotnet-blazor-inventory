@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: northline-inventory
+metadata:
+  template: northline-inventory-demo
+services:
+  api:
+    project: ./src/Inventory.Api
+    language: dotnet
+    host: appservice
+  web:
+    project: ./src/Inventory.Web
+    language: dotnet
+    host: appservice
+infra:
+  provider: bicep
+  path: infra

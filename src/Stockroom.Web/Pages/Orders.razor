@@ -1,0 +1,99 @@
+@page "/orders"
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Orders · Stockroom</PageTitle>
+
+<PageHeader Title="Orders" Lede="Drafts stay editable. Stock moves only when an order is fulfilled.">
+    <a class="btn" href="orders/new">New order</a>
+</PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+
+<section class="card">
+    <div class="filters" role="tablist">
+        <button type="button" class="@FilterClass(null)" @onclick="() => FilterAsync(null)">All</button>
+        <button type="button" class="@FilterClass(OrderStatus.Draft)" @onclick="() => FilterAsync(OrderStatus.Draft)">Draft</button>
+        <button type="button" class="@FilterClass(OrderStatus.Submitted)" @onclick="() => FilterAsync(OrderStatus.Submitted)">Submitted</button>
+        <button type="button" class="@FilterClass(OrderStatus.Fulfilled)" @onclick="() => FilterAsync(OrderStatus.Fulfilled)">Fulfilled</button>
+        <button type="button" class="@FilterClass(OrderStatus.Cancelled)" @onclick="() => FilterAsync(OrderStatus.Cancelled)">Cancelled</button>
+    </div>
+
+    @if (_page is null)
+    {
+        <p class="muted">Loading orders…</p>
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <p class="muted">No orders in this view.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Number</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Ordered</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var order in _page.Items)
+                    {
+                        <tr class="clickable" @onclick="() => Open(order.Id)">
+                            <td><a href="@OrderHref(order.Id)">@order.OrderNumber</a></td>
+                            <td>@order.CustomerName</td>
+                            <td><StatusPill Status="order.Status" /></td>
+                            <td>@UiFormat.When(order.OrderedAtUtc)</td>
+                            <td>@UiFormat.Money(order.Total)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            <button type="button" class="btn secondary" disabled="@(_page.Page <= 1)" @onclick="() => LoadAsync(_page.Page - 1)">Previous</button>
+            <span>Page @_page.Page · @_page.TotalCount orders</span>
+            <button type="button" class="btn secondary" disabled="@(_page.Page * _page.PageSize >= _page.TotalCount)" @onclick="() => LoadAsync(_page.Page + 1)">Next</button>
+        </div>
+    }
+</section>
+
+@code {
+    private PagedResult<OrderSummaryDto>? _page;
+    private OrderStatus? _status;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(1);
+
+    private string FilterClass(OrderStatus? status) => _status == status ? "chip active" : "chip";
+
+    private void Open(Guid id) => Navigation.NavigateTo(OrderHref(id));
+
+    private static string OrderHref(Guid id) => $"orders/{id}";
+
+    private async Task FilterAsync(OrderStatus? status)
+    {
+        _status = status;
+        await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        _error = null;
+        try
+        {
+            _page = await Api.GetOrdersAsync(_status, page, 20);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

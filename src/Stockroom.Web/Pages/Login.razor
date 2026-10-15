@@ -1,0 +1,96 @@
+@page "/login"
+@layout EmptyLayout
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+<PageTitle>Sign in · Stockroom</PageTitle>
+
+<div class="login">
+    <section class="login-story">
+        <p class="eyebrow">Portfolio demo</p>
+        <h1>Stockroom</h1>
+        <p>A small wholesale desk for stock, customers, and orders. Built by Arpan Bom as a public sample of a .NET 8 API and Blazor client.</p>
+        <p class="fine">Seeded data, public passwords, and a demo signing key. Nothing here is a real business.</p>
+    </section>
+    <section class="login-panel">
+        <h2>Sign in</h2>
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <p class="banner" role="alert">@_error</p>
+        }
+        <form @onsubmit="SignInAsync">
+            <label>
+                Email
+                <input @bind="_email" type="email" autocomplete="username" required />
+            </label>
+            <label>
+                Password
+                <input @bind="_password" type="password" autocomplete="current-password" required />
+            </label>
+            <button class="btn" type="submit" disabled="@_busy">@(_busy ? "Signing in…" : "Enter stockroom")</button>
+        </form>
+        <div class="credential-list">
+            <button type="button" class="credential" @onclick="UseAdmin">
+                <strong>Admin</strong>
+                <span>admin@stockroom.demo</span>
+                <span>Demo-Admin-123!</span>
+            </button>
+            <button type="button" class="credential" @onclick="UseClerk">
+                <strong>Clerk</strong>
+                <span>clerk@stockroom.demo</span>
+                <span>Demo-Clerk-123!</span>
+            </button>
+        </div>
+    </section>
+</div>
+
+@code {
+    private string _email = "admin@stockroom.demo";
+    private string _password = "Demo-Admin-123!";
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/dashboard");
+        }
+    }
+
+    private void UseAdmin()
+    {
+        _email = "admin@stockroom.demo";
+        _password = "Demo-Admin-123!";
+        _error = null;
+    }
+
+    private void UseClerk()
+    {
+        _email = "clerk@stockroom.demo";
+        _password = "Demo-Clerk-123!";
+        _error = null;
+    }
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var response = await Api.LoginAsync(new LoginRequest(_email, _password));
+            await Auth.SignInAsync(Js, response);
+            Navigation.NavigateTo("/dashboard");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,24 @@
+<header class="page-head">
+    <div>
+        <h1>@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Lede))
+        {
+            <p>@Lede</p>
+        }
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="page-actions">@ChildContent</div>
+    }
+</header>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Lede { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

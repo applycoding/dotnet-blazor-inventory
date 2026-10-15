@@ -1,0 +1,198 @@
+@page "/orders/{Id:guid}"
+@using System.Diagnostics
+@inject ApiClient Api
+
+<PageTitle>@(_order?.OrderNumber ?? "Order") · Stockroom</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+
+@if (_order is null && string.IsNullOrWhiteSpace(_error))
+{
+    <p class="muted">Loading order…</p>
+}
+else if (_order is not null)
+{
+    <PageHeader Title="@_order.OrderNumber" Lede="@Hint(_order.Status)">
+        <StatusPill Status="_order.Status" />
+    </PageHeader>
+
+    <section class="card detail-grid">
+        <div>
+            <h2>@_order.CustomerName</h2>
+            <p>@_order.CustomerEmail</p>
+            <p class="muted">Ordered @UiFormat.When(_order.OrderedAtUtc)</p>
+            @if (_order.SubmittedAtUtc is not null)
+            {
+                <p class="muted">Submitted @UiFormat.When(_order.SubmittedAtUtc.Value)</p>
+            }
+            @if (_order.FulfilledAtUtc is not null)
+            {
+                <p class="muted">Fulfilled @UiFormat.When(_order.FulfilledAtUtc.Value)</p>
+            }
+            @if (_order.CancelledAtUtc is not null)
+            {
+                <p class="muted">Cancelled @UiFormat.When(_order.CancelledAtUtc.Value)</p>
+            }
+        </div>
+        <div class="detail-total">
+            <span>Total</span>
+            <strong>@UiFormat.Money(_order.Total)</strong>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Product</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Line</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _order.Lines)
+                    {
+                        <tr>
+                            <td>@line.Sku</td>
+                            <td>@line.ProductName</td>
+                            <td>@line.Quantity</td>
+                            <td>@UiFormat.Money(line.UnitPrice)</td>
+                            <td>@UiFormat.Money(line.LineTotal)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="row-actions">
+            @if (_order.Status == OrderStatus.Draft)
+            {
+                <button type="button" class="btn" disabled="@_busy" @onclick="SubmitAsync">@(_confirmSubmit ? "Confirm submit" : "Submit")</button>
+            }
+            @if (_order.Status == OrderStatus.Submitted)
+            {
+                <button type="button" class="btn" disabled="@_busy" @onclick="FulfillAsync">@(_confirmFulfill ? "Confirm fulfill" : "Fulfill")</button>
+            }
+            @if (_order.Status is OrderStatus.Draft or OrderStatus.Submitted)
+            {
+                <button type="button" class="btn danger" disabled="@_busy" @onclick="CancelAsync">@(_confirmCancel ? "Confirm cancel" : "Cancel order")</button>
+            }
+            <a class="btn secondary" href="orders">Back to orders</a>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private OrderDetailDto? _order;
+    private string? _error;
+    private bool _busy;
+    private bool _confirmSubmit;
+    private bool _confirmFulfill;
+    private bool _confirmCancel;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _confirmSubmit = false;
+        _confirmFulfill = false;
+        _confirmCancel = false;
+        try
+        {
+            _order = await Api.GetOrderAsync(Id);
+        }
+        catch (ApiException ex)
+        {
+            _order = null;
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (!_confirmSubmit)
+        {
+            _confirmSubmit = true;
+            _confirmCancel = false;
+            return;
+        }
+
+        await RunAsync(() => Api.SubmitOrderAsync(Id));
+    }
+
+    private async Task FulfillAsync()
+    {
+        if (!_confirmFulfill)
+        {
+            _confirmFulfill = true;
+            _confirmCancel = false;
+            return;
+        }
+
+        await RunAsync(() => Api.FulfillOrderAsync(Id));
+    }
+
+    private async Task CancelAsync()
+    {
+        if (!_confirmCancel)
+        {
+            _confirmCancel = true;
+            _confirmSubmit = false;
+            _confirmFulfill = false;
+            return;
+        }
+
+        await RunAsync(() => Api.CancelOrderAsync(Id));
+    }
+
+    private async Task RunAsync(Func<Task<OrderDetailDto>> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _order = await action();
+            _confirmSubmit = false;
+            _confirmFulfill = false;
+            _confirmCancel = false;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _confirmSubmit = false;
+            _confirmFulfill = false;
+            _confirmCancel = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Hint(OrderStatus status)
+    {
+        switch (status)
+        {
+            case OrderStatus.Draft:
+                return "Submit the order when the lines look right.";
+            case OrderStatus.Submitted:
+                return "Fulfill the order to commit stock, or cancel it.";
+            case OrderStatus.Fulfilled:
+                return "Stock was committed when this order was fulfilled.";
+            case OrderStatus.Cancelled:
+                return "Cancelled orders stay on file and do not change stock.";
+            default:
+                var unexpected = status;
+                throw new UnreachableException($"Unhandled order status '{unexpected}'.");
+        }
+    }
+}

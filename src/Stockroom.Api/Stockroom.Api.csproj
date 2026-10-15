@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Stockroom.Application\Stockroom.Application.csproj" />
+    <ProjectReference Include="..\Stockroom.Infrastructure\Stockroom.Infrastructure.csproj" />
+    <ProjectReference Include="..\Stockroom.Web\Stockroom.Web.csproj" />
+  </ItemGroup>
+</Project>

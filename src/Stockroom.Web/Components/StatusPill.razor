@@ -1,0 +1,18 @@
+<span class="pill pill-@Status.ToString().ToLowerInvariant()">@Label</span>
+
+@code {
+    [Parameter]
+    public OrderStatus Status { get; set; }
+
+    private string Label => Status switch
+    {
+        OrderStatus.Draft => "Draft",
+        OrderStatus.Submitted => "Submitted",
+        OrderStatus.Fulfilled => "Fulfilled",
+        OrderStatus.Cancelled => "Cancelled",
+        _ => Unexpected(Status)
+    };
+
+    private static string Unexpected(OrderStatus status) =>
+        throw new InvalidOperationException($"Unhandled order status '{status}'.");
+}

@@ -1,0 +1,64 @@
+# Manual Azure deployment for the Stockroom demo.
+# This workflow does not run on push or pull request. Trigger it with workflow_dispatch
+# after the GitHub environment and Azure OIDC secrets described in the README exist.
+name: Deploy to Azure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Provision and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      SQL_ADMIN_LOGIN: ${{ secrets.SQL_ADMIN_LOGIN }}
+      SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+      JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+      APP_NAME: ${{ vars.STOCKROOM_APP_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Provision App Service and Azure SQL
+        id: provision
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            app_name="${APP_NAME:-stockroom}"
+            outputs=$(az deployment group create \
+              --name stockroom \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --template-file infra/main.bicep \
+              --parameters appName="$app_name" sqlAdminLogin="$SQL_ADMIN_LOGIN" sqlAdminPassword="$SQL_ADMIN_PASSWORD" jwtSigningKey="$JWT_SIGNING_KEY" \
+              --query properties.outputs \
+              --output json)
+            echo "webAppName=$(echo "$outputs" | jq -r .webAppName.value)" >> "$GITHUB_OUTPUT"
+            echo "webAppUrl=$(echo "$outputs" | jq -r .webAppUrl.value)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish API
+        run: dotnet publish src/Stockroom.Api/Stockroom.Api.csproj -c Release -o "${{ github.workspace }}/publish"
+
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.provision.outputs.webAppName }}
+          package: ${{ github.workspace }}/publish
+
+      - name: Show site
+        run: echo "Deployed ${{ steps.provision.outputs.webAppUrl }}"

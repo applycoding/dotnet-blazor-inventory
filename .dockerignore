@@ -1,0 +1,14 @@
+**/.git
+**/.vs
+**/.vscode
+**/.idea
+**/bin
+**/obj
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.user
+**/tests
+**/.github
+publish
+app.zip

@@ -1,0 +1,45 @@
+@inherits LayoutComponentBase
+@inject AuthState Auth
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+@if (!Auth.IsAuthenticated)
+{
+    <RedirectToLogin />
+}
+else
+{
+    <div class="shell">
+        <aside class="sidebar">
+            <a class="brand" href="dashboard">
+                <span class="brand-mark">S</span>
+                <span>
+                    <strong>Stockroom</strong>
+                    <small>Demo desk</small>
+                </span>
+            </a>
+            <nav>
+                <NavLink href="dashboard" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink href="products">Products</NavLink>
+                <NavLink href="customers">Customers</NavLink>
+                <NavLink href="orders">Orders</NavLink>
+            </nav>
+            <div class="sidebar-foot">
+                <p>@Auth.DisplayName</p>
+                <p class="role">@Auth.Role</p>
+                <button type="button" class="btn secondary" @onclick="SignOutAsync">Sign out</button>
+            </div>
+        </aside>
+        <div class="workspace">
+            @Body
+        </div>
+    </div>
+}
+
+@code {
+    private async Task SignOutAsync()
+    {
+        await Auth.SignOutAsync(Js);
+        Navigation.NavigateTo("/login");
+    }
+}

@@ -1,0 +1,95 @@
+@page "/"
+@page "/dashboard"
+@inject ApiClient Api
+
+<PageTitle>Dashboard · Stockroom</PageTitle>
+
+<PageHeader Title="Dashboard" Lede="What needs a look before the next order goes out." />
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+else if (_data is null)
+{
+    <p class="muted">Loading the desk…</p>
+}
+else
+{
+    <section class="stats">
+        <article class="card stat">
+            <span>Active products</span>
+            <strong>@_data.ActiveProducts</strong>
+        </article>
+        <article class="card stat">
+            <span>Low stock</span>
+            <strong class="copper">@_data.LowStockProducts</strong>
+        </article>
+        <article class="card stat">
+            <span>Open orders</span>
+            <strong>@_data.OpenOrders</strong>
+        </article>
+        <article class="card stat">
+            <span>Fulfilled revenue</span>
+            <strong>@UiFormat.Money(_data.FulfilledRevenue)</strong>
+        </article>
+    </section>
+
+    <div class="split">
+        <section class="card">
+            <h2>Low stock</h2>
+            @if (_data.LowStock.Count == 0)
+            {
+                <p class="muted">Nothing active is at or below its reorder level.</p>
+            }
+            else
+            {
+                <ul class="plain">
+                    @foreach (var product in _data.LowStock)
+                    {
+                        <li>
+                            <a href="products">@product.Name</a>
+                            <span>@product.QuantityOnHand on hand · reorder @product.ReorderLevel</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+        <section class="card">
+            <h2>Recent orders</h2>
+            @if (_data.RecentOrders.Count == 0)
+            {
+                <p class="muted">No orders yet.</p>
+            }
+            else
+            {
+                <ul class="plain">
+                    @foreach (var order in _data.RecentOrders)
+                    {
+                        <li>
+                            <a href="@($"orders/{order.Id}")">@order.OrderNumber · @order.CustomerName</a>
+                            <span><StatusPill Status="order.Status" /> @UiFormat.Money(order.Total)</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private DashboardDto? _data;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _data = await Api.GetDashboardAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

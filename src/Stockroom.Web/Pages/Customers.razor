@@ -1,0 +1,118 @@
+@page "/customers"
+@inject ApiClient Api
+
+<PageTitle>Customers · Stockroom</PageTitle>
+
+<PageHeader Title="Customers" Lede="The accounts this desk sells to." />
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+
+<section class="card form-card">
+    <h2>Add a customer</h2>
+    <form class="inline-form" @onsubmit="CreateAsync">
+        <label>
+            Name
+            <input @bind="_name" maxlength="160" required />
+        </label>
+        <label>
+            Email
+            <input @bind="_email" type="email" maxlength="200" required />
+        </label>
+        <label>
+            Phone
+            <input @bind="_phone" maxlength="40" />
+        </label>
+        <button class="btn" type="submit" disabled="@_busy">Save customer</button>
+    </form>
+</section>
+
+<section class="card">
+    <form class="toolbar" @onsubmit="LoadAsync">
+        <input @bind="_search" placeholder="Search name or email" aria-label="Search customers" />
+        <button class="btn secondary" type="submit">Search</button>
+    </form>
+    @if (_customers is null)
+    {
+        <p class="muted">Loading customers…</p>
+    }
+    else if (_customers.Count == 0)
+    {
+        <p class="muted">No customers match that search.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Added</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var customer in _customers)
+                    {
+                        <tr>
+                            <td>@customer.Name</td>
+                            <td>@customer.Email</td>
+                            <td>@(customer.Phone ?? "—")</td>
+                            <td>@UiFormat.When(customer.CreatedAtUtc)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<CustomerDto>? _customers;
+    private string _search = string.Empty;
+    private string _name = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _customers = await Api.GetCustomersAsync(_search);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Api.CreateCustomerAsync(new CreateCustomerRequest(_name, _email, string.IsNullOrWhiteSpace(_phone) ? null : _phone));
+            _name = string.Empty;
+            _email = string.Empty;
+            _phone = string.Empty;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

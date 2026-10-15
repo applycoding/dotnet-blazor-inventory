@@ -1,0 +1,144 @@
+@page "/orders/new"
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>New order · Stockroom</PageTitle>
+
+<PageHeader Title="New order" Lede="Prices are copied from the product at the moment you save." />
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+
+@if (_customers is null || _products is null)
+{
+    <p class="muted">Loading customers and products…</p>
+}
+else
+{
+    <section class="card">
+        <form @onsubmit="SaveDraftAsync">
+            <label>
+                Customer
+                <select @bind="_customerId">
+                    <option value="">Select a customer</option>
+                    @foreach (var customer in _customers)
+                    {
+                        <option value="@customer.Id">@customer.Name</option>
+                    }
+                </select>
+            </label>
+
+            <div class="lines">
+                @for (var index = 0; index < _lines.Count; index++)
+                {
+                    var line = _lines[index];
+                    var product = _products.FirstOrDefault(item => item.Id == line.ProductId);
+                    <div class="line">
+                        <label>
+                            Product
+                            <select @bind="line.ProductId">
+                                <option value="@Guid.Empty">Select a product</option>
+                                @foreach (var item in _products.Where(item => item.IsActive))
+                                {
+                                    <option value="@item.Id">@item.Sku — @item.Name (@item.QuantityOnHand on hand)</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Quantity
+                            <input @bind="line.Quantity" type="number" min="1" step="1" />
+                        </label>
+                        <p class="line-price">@(product is null ? "—" : UiFormat.Money(product.UnitPrice * line.Quantity))</p>
+                        <button type="button" class="btn secondary" @onclick="() => RemoveLine(line)" disabled="@(_lines.Count == 1)">Remove</button>
+                    </div>
+                }
+            </div>
+            <button type="button" class="btn secondary" @onclick="AddLine">Add line</button>
+            <div class="row-actions">
+                <button class="btn secondary" type="button" disabled="@_busy" @onclick="SaveDraftAsync">Save draft</button>
+                <button class="btn" type="button" disabled="@_busy" @onclick="SaveAndSubmitAsync">Save and submit</button>
+            </div>
+        </form>
+    </section>
+}
+
+@code {
+    private readonly List<DraftLine> _lines = [new()];
+    private IReadOnlyList<CustomerDto>? _customers;
+    private IReadOnlyList<ProductDto>? _products;
+    private string _customerId = string.Empty;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _customers = await Api.GetCustomersAsync(null);
+            var products = await Api.GetProductsAsync(null, 1, 100);
+            _products = products.Items;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void AddLine() => _lines.Add(new DraftLine());
+
+    private void RemoveLine(DraftLine line) => _lines.Remove(line);
+
+    private Task SaveDraftAsync() => SaveAsync(false);
+
+    private Task SaveAndSubmitAsync() => SaveAsync(true);
+
+    private async Task SaveAsync(bool submit)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (!Guid.TryParse(_customerId, out var customerId) || customerId == Guid.Empty)
+            {
+                _error = "Choose a customer.";
+                return;
+            }
+
+            if (_lines.Any(line => line.ProductId == Guid.Empty || line.Quantity < 1))
+            {
+                _error = "Each line needs a product and a quantity.";
+                return;
+            }
+
+            if (_lines.Select(line => line.ProductId).Distinct().Count() != _lines.Count)
+            {
+                _error = "Each product can appear only once on an order.";
+                return;
+            }
+
+            var request = new CreateOrderRequest(
+                customerId,
+                _lines.Select(line => new CreateOrderLineRequest(line.ProductId, line.Quantity)).ToList(),
+                submit);
+            var created = await Api.CreateOrderAsync(request);
+            Navigation.NavigateTo($"/orders/{created.Id}");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class DraftLine
+    {
+        public Guid ProductId { get; set; }
+
+        public int Quantity { get; set; } = 1;
+    }
+}

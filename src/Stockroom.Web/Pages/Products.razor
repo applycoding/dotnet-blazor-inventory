@@ -1,0 +1,289 @@
+@page "/products"
+@inject ApiClient Api
+
+<PageTitle>Products · Stockroom</PageTitle>
+
+<PageHeader Title="Products" Lede="SKUs, prices, and what is actually on the shelf.">
+    <button type="button" class="btn" @onclick="OpenCreate">New product</button>
+</PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="banner" role="alert">@_error</p>
+}
+
+<div class="layout-with-panel @(_panelOpen ? "with-panel" : null)">
+    <section class="card">
+        <form class="toolbar" @onsubmit="SearchAsync">
+            <input @bind="_search" placeholder="Search name or SKU" aria-label="Search products" />
+            <button class="btn secondary" type="submit">Search</button>
+        </form>
+        @if (_page is null)
+        {
+            <p class="muted">Loading products…</p>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <p class="muted">No products match that search.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Name</th>
+                            <th>Price</th>
+                            <th>On hand</th>
+                            <th>Reorder</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in _page.Items)
+                        {
+                            <tr class="@(product.IsLowStock ? "low" : null)">
+                                <td>@product.Sku</td>
+                                <td>
+                                    @product.Name
+                                    @if (!product.IsActive)
+                                    {
+                                        <span class="pill pill-cancelled">Inactive</span>
+                                    }
+                                </td>
+                                <td>@UiFormat.Money(product.UnitPrice)</td>
+                                <td>@product.QuantityOnHand</td>
+                                <td>@product.ReorderLevel</td>
+                                <td><button type="button" class="btn secondary" @onclick="() => OpenEdit(product.Id)">Edit</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="pager">
+                <button type="button" class="btn secondary" disabled="@(_page.Page <= 1 || _busy)" @onclick="() => LoadAsync(_page.Page - 1)">Previous</button>
+                <span>Page @_page.Page · @_page.TotalCount products</span>
+                <button type="button" class="btn secondary" disabled="@(!HasNext || _busy)" @onclick="() => LoadAsync(_page.Page + 1)">Next</button>
+            </div>
+        }
+    </section>
+
+    @if (_panelOpen)
+    {
+        <section class="card panel">
+            <h2>@(_editing ? "Edit product" : "New product")</h2>
+            <form @onsubmit="SaveAsync">
+                <label>
+                    SKU
+                    <input @bind="_sku" maxlength="32" disabled="@_editing" required />
+                </label>
+                <label>
+                    Name
+                    <input @bind="_name" maxlength="120" required />
+                </label>
+                <label>
+                    Description
+                    <textarea @bind="_description" maxlength="500"></textarea>
+                </label>
+                <label>
+                    Unit price (USD)
+                    <input @bind="_price" type="number" min="0" step="0.01" />
+                </label>
+                @if (!_editing)
+                {
+                    <label>
+                        Opening quantity
+                        <input @bind="_quantity" type="number" min="0" step="1" />
+                    </label>
+                }
+                else
+                {
+                    <p class="muted">On hand: @_quantity</p>
+                }
+                <label>
+                    Reorder level
+                    <input @bind="_reorder" type="number" min="0" step="1" />
+                </label>
+                @if (_editing)
+                {
+                    <label class="check">
+                        <input type="checkbox" @bind="_active" />
+                        Active
+                    </label>
+                }
+                <div class="row-actions">
+                    <button class="btn" type="submit" disabled="@_busy">Save</button>
+                    <button class="btn secondary" type="button" @onclick="ClosePanel">Close</button>
+                </div>
+            </form>
+
+            @if (_editing)
+            {
+                <form class="stock-form" @onsubmit="AdjustAsync">
+                    <h3>Adjust stock</h3>
+                    <label>
+                        Quantity change
+                        <input @bind="_delta" type="number" step="1" />
+                    </label>
+                    <label>
+                        Reason
+                        <input @bind="_reason" maxlength="200" placeholder="Received, count, damage…" />
+                    </label>
+                    <button class="btn secondary" type="submit" disabled="@_busy">Record movement</button>
+                </form>
+                @if (_movements.Count > 0)
+                {
+                    <h3>Recent movements</h3>
+                    <ul class="plain compact">
+                        @foreach (var movement in _movements)
+                        {
+                            <li>
+                                <strong>@UiFormat.Signed(movement.Delta)</strong>
+                                <span>@movement.Reason · balance @movement.BalanceAfter · @UiFormat.When(movement.CreatedAtUtc)</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private PagedResult<ProductDto>? _page;
+    private string _search = string.Empty;
+    private string? _error;
+    private bool _busy;
+    private bool _panelOpen;
+    private bool _editing;
+    private Guid _editingId;
+    private string _sku = string.Empty;
+    private string _name = string.Empty;
+    private string _description = string.Empty;
+    private decimal _price;
+    private int _quantity;
+    private int _reorder = 5;
+    private bool _active = true;
+    private int _delta = 1;
+    private string _reason = string.Empty;
+    private IReadOnlyList<StockMovementDto> _movements = [];
+
+    private bool HasNext => _page is not null && _page.Page * _page.PageSize < _page.TotalCount;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(1);
+
+    private async Task SearchAsync() => await LoadAsync(1);
+
+    private async Task LoadAsync(int page)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _page = await Api.GetProductsAsync(_search, page, 20);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenCreate()
+    {
+        _panelOpen = true;
+        _editing = false;
+        _editingId = Guid.Empty;
+        _sku = string.Empty;
+        _name = string.Empty;
+        _description = string.Empty;
+        _price = 0;
+        _quantity = 0;
+        _reorder = 5;
+        _active = true;
+        _movements = [];
+        _error = null;
+    }
+
+    private async Task OpenEdit(Guid id)
+    {
+        _error = null;
+        try
+        {
+            var product = await Api.GetProductAsync(id);
+            _panelOpen = true;
+            _editing = true;
+            _editingId = product.Id;
+            _sku = product.Sku;
+            _name = product.Name;
+            _description = product.Description ?? string.Empty;
+            _price = product.UnitPrice;
+            _quantity = product.QuantityOnHand;
+            _reorder = product.ReorderLevel;
+            _active = product.IsActive;
+            _movements = product.RecentMovements;
+            _delta = 1;
+            _reason = string.Empty;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void ClosePanel() => _panelOpen = false;
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (_editing)
+            {
+                await Api.UpdateProductAsync(_editingId, new UpdateProductRequest(_name, _description, _price, _reorder, _active));
+                await OpenEdit(_editingId);
+            }
+            else
+            {
+                var created = await Api.CreateProductAsync(new CreateProductRequest(_sku, _name, _description, _price, _quantity, _reorder));
+                await OpenEdit(created.Id);
+            }
+
+            await LoadAsync(_page?.Page ?? 1);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task AdjustAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Api.AdjustStockAsync(_editingId, new AdjustStockRequest(_delta, _reason));
+            _reason = string.Empty;
+            await OpenEdit(_editingId);
+            await LoadAsync(_page?.Page ?? 1);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

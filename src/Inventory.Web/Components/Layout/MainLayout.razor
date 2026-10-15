@@ -1,0 +1,48 @@
+﻿@inherits LayoutComponentBase
+@inject ApiAuthStateProvider Auth
+@inject NavigationManager Navigation
+
+<AuthorizeView>
+    <Authorized>
+        <div class="shell">
+            <aside>
+                <a class="brand" href="/">
+                    <span class="mark" aria-hidden="true">N</span>
+                    <span>
+                        <strong>Northline</strong>
+                        <small>Inventory demo</small>
+                    </span>
+                </a>
+                <nav aria-label="Primary">
+                    <NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                    <NavLink href="/products">Products</NavLink>
+                    <NavLink href="/movements">Movements</NavLink>
+                </nav>
+                <div class="aside-foot">
+                    <p>@context.User.Identity?.Name</p>
+                    <button type="button" class="text-button" @onclick="SignOut">Sign out</button>
+                </div>
+            </aside>
+            <div class="workspace">
+                @Body
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+<div id="blazor-error-ui">
+    The page hit an unexpected error.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">Dismiss</a>
+</div>
+
+@code {
+    private async Task SignOut()
+    {
+        await Auth.SignOutAsync();
+        Navigation.NavigateTo("/login", replace: true);
+    }
+}

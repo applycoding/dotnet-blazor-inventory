@@ -1,0 +1,110 @@
+﻿@page "/"
+@inject InventoryApiClient Api
+
+<PageTitle>Dashboard · Northline</PageTitle>
+
+<section class="page">
+    <header class="page-head">
+        <div>
+            <p class="eyebrow">Fictional wholesaler</p>
+            <h1>Floor stock</h1>
+            <p class="lede">Active SKUs, what is at or under the reorder level, and the value sitting on the shelf.</p>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="status">Checking the shelves…</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <p class="banner" role="alert">@_error</p>
+    }
+    else if (_dashboard is not null)
+    {
+        <div class="stats">
+            <article>
+                <p>Active SKUs</p>
+                <strong>@_dashboard.ActiveProductCount</strong>
+            </article>
+            <article class="@(_dashboard.LowStockCount > 0 ? "warn" : null)">
+                <p>Low stock</p>
+                <strong>@_dashboard.LowStockCount</strong>
+            </article>
+            <article>
+                <p>On-hand value</p>
+                <strong>@CatalogFormat.Money(_dashboard.InventoryValue)</strong>
+            </article>
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Needs a reorder</h2>
+                <a href="/movements">Record a movement</a>
+            </header>
+            @if (_dashboard.LowStock.Count == 0)
+            {
+                <p class="empty">Nothing is at or below its reorder level.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">SKU</th>
+                                <th scope="col">Product</th>
+                                <th scope="col" class="num">On hand</th>
+                                <th scope="col" class="num">Reorder</th>
+                                <th scope="col">Level</th>
+                                <th scope="col"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in _dashboard.LowStock)
+                            {
+                                var ratio = product.ReorderLevel == 0
+                                    ? 0
+                                    : Math.Clamp((double)product.QuantityOnHand / product.ReorderLevel, 0, 1);
+                                <tr>
+                                    <td class="sku">@product.Sku</td>
+                                    <td>@product.Name</td>
+                                    <td class="num">@product.QuantityOnHand</td>
+                                    <td class="num">@product.ReorderLevel</td>
+                                    <td><span class="meter" aria-hidden="true" style="@($"--value: {ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)}")"></span></td>
+                                    <td><a href="@($"/movements?product={product.Id}")">Receive</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</section>
+
+@code {
+    private DashboardModel? _dashboard;
+    private string? _error;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _dashboard = await Api.GetDashboardAsync();
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "The inventory API is not reachable. Start Inventory.Api, then reload this page.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

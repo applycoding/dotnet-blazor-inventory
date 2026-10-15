@@ -1,0 +1,192 @@
+@page "/movements"
+@inject InventoryApiClient Api
+
+<PageTitle>Movements · Northline</PageTitle>
+
+<section class="page">
+    <header class="page-head">
+        <div>
+            <p class="eyebrow">Ledger</p>
+            <h1>Stock movements</h1>
+            <p class="lede">Receive stock, issue it, or set the counted quantity. Issues stop when the shelf would go negative.</p>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <p class="banner" role="alert">@_error</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(_saved))
+    {
+        <p class="banner good" role="status">@_saved</p>
+    }
+
+    <div class="movement-layout">
+        <EditForm Model="_draft" OnValidSubmit="Record" class="stack-form panel">
+            <h2>Record</h2>
+            <label>
+                Product
+                <InputSelect @bind-Value="_draft.ProductId">
+                    <option value="@Guid.Empty">Choose a SKU</option>
+                    @foreach (var product in _products)
+                    {
+                        <option value="@product.Id">@product.Sku — @product.Name (@product.QuantityOnHand on hand)</option>
+                    }
+                </InputSelect>
+            </label>
+            <label>
+                Type
+                <InputSelect @bind-Value="_draft.Type">
+                    <option value="@MovementType.Receipt">Receipt</option>
+                    <option value="@MovementType.Issue">Issue</option>
+                    <option value="@MovementType.Adjustment">Count</option>
+                </InputSelect>
+            </label>
+            <label>
+                @QuantityLabel
+                <InputNumber @bind-Value="_draft.Quantity" />
+                @if (_draft.Type == MovementType.Adjustment)
+                {
+                    <span class="hint">Sets on-hand to this count.</span>
+                }
+            </label>
+            <label>
+                Note
+                <InputText @bind-Value="_draft.Note" />
+            </label>
+            <button class="button" type="submit" disabled="@_busy">@(_busy ? "Saving…" : "Post movement")</button>
+        </EditForm>
+
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Recent</h2>
+            </header>
+            @if (_loading)
+            {
+                <p class="status">Loading movements…</p>
+            }
+            else if (_movements.Count == 0)
+            {
+                <p class="empty">No movements yet.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">When</th>
+                                <th scope="col">SKU</th>
+                                <th scope="col">Type</th>
+                                <th scope="col" class="num">Change</th>
+                                <th scope="col" class="num">After</th>
+                                <th scope="col">Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var movement in _movements)
+                            {
+                                <tr>
+                                    <td>@CatalogFormat.When(movement.OccurredAt)</td>
+                                    <td class="sku">@movement.Sku</td>
+                                    <td>@CatalogFormat.MovementLabel(movement.Type)</td>
+                                    <td class="num @(movement.Delta < 0 ? "down" : "up")">@CatalogFormat.Delta(movement.Delta)</td>
+                                    <td class="num">@movement.QuantityAfter</td>
+                                    <td>@(string.IsNullOrWhiteSpace(movement.Note) ? "—" : movement.Note)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "product")]
+    public Guid? ProductId { get; set; }
+
+    private readonly MovementDraft _draft = new();
+    private List<ProductModel> _products = [];
+    private IReadOnlyList<MovementModel> _movements = [];
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _saved;
+
+    private string QuantityLabel => _draft.Type switch
+    {
+        MovementType.Receipt => "Quantity received",
+        MovementType.Issue => "Quantity issued",
+        MovementType.Adjustment => "Counted quantity",
+        _ => "Quantity"
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override void OnParametersSet()
+    {
+        if (ProductId is Guid id && id != Guid.Empty)
+        {
+            _draft.ProductId = id;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var products = await Api.GetProductsAsync(null, includeArchived: false, page: 1, pageSize: 100);
+            _products = products.Items.ToList();
+            if (_draft.ProductId == Guid.Empty && ProductId is Guid selected)
+            {
+                _draft.ProductId = selected;
+            }
+
+            _movements = await Api.GetMovementsAsync(null);
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "The inventory API is not reachable. Start Inventory.Api, then reload this page.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Record()
+    {
+        if (_draft.ProductId == Guid.Empty)
+        {
+            _error = "Choose a product.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _saved = null;
+        try
+        {
+            var movement = await Api.RecordMovementAsync(_draft);
+            _saved = $"{CatalogFormat.MovementLabel(movement.Type)} posted for {movement.Sku}. On hand is now {movement.QuantityAfter}.";
+            _draft.Note = string.Empty;
+            await LoadAsync();
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Errors.SelectMany(pair => pair.Value).FirstOrDefault() ?? exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

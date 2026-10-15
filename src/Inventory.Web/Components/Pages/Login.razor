@@ -1,0 +1,85 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject ApiAuthStateProvider Auth
+@inject InventoryApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in · Northline</PageTitle>
+
+<div class="login-screen">
+    <section class="login-card">
+        <p class="eyebrow">Northline Supply · fictional</p>
+        <h1>Sign in to the ledger</h1>
+        <p class="lede">A portfolio demo of products, receipts, issues, and low stock. Nothing here is a live warehouse.</p>
+
+        <EditForm Model="_form" OnValidSubmit="Submit">
+            <DataAnnotationsValidator />
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <p class="banner" role="alert">@_error</p>
+            }
+            <label>
+                Email
+                <InputText @bind-Value="_form.Email" autocomplete="username" />
+            </label>
+            <label>
+                Password
+                <InputText type="password" @bind-Value="_form.Password" autocomplete="current-password" />
+            </label>
+            <button class="button" type="submit" disabled="@_busy">@(_busy ? "Signing in…" : "Sign in")</button>
+        </EditForm>
+
+        <dl class="demo-account">
+            <div>
+                <dt>Demo email</dt>
+                <dd>demo@northline.local</dd>
+            </div>
+            <div>
+                <dt>Demo password</dt>
+                <dd>Demo1234!</dd>
+            </div>
+        </dl>
+    </section>
+</div>
+
+@code {
+    private readonly LoginForm _form = new();
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await Auth.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/", replace: true);
+        }
+    }
+
+    private async Task Submit()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Api.LoginAsync(_form.Email, _form.Password);
+            await Auth.SignInAsync(result.AccessToken);
+            Navigation.NavigateTo("/", replace: true);
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class LoginForm
+    {
+        public string Email { get; set; } = "demo@northline.local";
+
+        public string Password { get; set; } = "Demo1234!";
+    }
+}

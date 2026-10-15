@@ -1,0 +1,20 @@
+@host = http://localhost:5080
+@email = demo@northline.local
+@password = Demo1234!
+
+### Login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Products
+GET {{host}}/api/products
+Authorization: Bearer {{token}}
+
+### Dashboard
+GET {{host}}/api/dashboard
+Authorization: Bearer {{token}}

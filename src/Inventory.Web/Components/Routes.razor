@@ -1,0 +1,75 @@
+﻿@inject ApiAuthStateProvider Auth
+@implements IDisposable
+
+@if (!_ready)
+{
+    <div class="boot">
+        <span class="mark" aria-hidden="true">N</span>
+        <p>Opening the ledger…</p>
+    </div>
+}
+else if (!_authenticated)
+{
+    <CascadingAuthenticationState>
+        <Login />
+    </CascadingAuthenticationState>
+}
+else
+{
+    <CascadingAuthenticationState>
+        <Router AppAssembly="typeof(Program).Assembly">
+            <Found Context="routeData">
+                <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            </Found>
+            <NotFound>
+                <LayoutView Layout="typeof(MainLayout)">
+                    <section class="page">
+                        <h1>Page not found</h1>
+                        <p class="lede">That route is not part of this demo.</p>
+                        <a class="button" href="/">Back to the dashboard</a>
+                    </section>
+                </LayoutView>
+            </NotFound>
+        </Router>
+    </CascadingAuthenticationState>
+}
+
+@code {
+    private bool _ready;
+    private bool _authenticated;
+
+    protected override void OnInitialized()
+    {
+        Auth.AuthenticationStateChanged += OnAuthChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await Auth.InitializeAsync();
+        var state = await Auth.GetAuthenticationStateAsync();
+        _authenticated = state.User.Identity?.IsAuthenticated == true;
+        _ready = true;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Auth.AuthenticationStateChanged -= OnAuthChanged;
+    }
+
+    private void OnAuthChanged(Task<AuthenticationState> task)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            var state = await task;
+            _authenticated = state.User.Identity?.IsAuthenticated == true;
+            StateHasChanged();
+        });
+    }
+}
